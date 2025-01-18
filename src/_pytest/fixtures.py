@@ -1621,8 +1621,10 @@ class FixtureManager:
                     continue
                 fixturedefs = self.getfixturedefs(argname, parentnode)
                 if fixturedefs:
-                    arg2fixturedefs[argname] = fixturedefs
-                    for arg in fixturedefs[-1].argnames:
+                    # Sort fixturedefs to prioritize explicitly named fixtures
+                    sorted_fixturedefs = sorted(fixturedefs, key=lambda fd: fd.argname != argname, reverse=True)
+                    arg2fixturedefs[argname] = sorted_fixturedefs
+                    for arg in sorted_fixturedefs[-1].argnames:
                         if arg not in fixturenames_closure:
                             fixturenames_closure.append(arg)
 
