@@ -54,6 +54,30 @@ to work on a particular issue, add a comment to that effect on the specific issu
 
 Don't forget to check the issue trackers of your favourite plugins, too!
 
+Setting up GITHUB_TOKEN
+-----------------------
+
+Some operations, especially those interacting with GitHub, require a GitHub token. To set this up:
+
+1. Create a personal access token on GitHub (https://github.com/settings/tokens).
+2. Set the token as an environment variable named GITHUB_TOKEN:
+
+   .. code:: bash
+
+       export GITHUB_TOKEN=your_token_here
+
+   You can add this to your shell's startup file (e.g., .bashrc, .zshrc) to make it permanent.
+
+3. Verify the token is set correctly by running:
+
+   .. code:: bash
+
+       python3 scripts/check_github_token.py
+
+   This script is located in the pytest repository and will confirm if the token is set correctly.
+
+Remember to keep your token secure and never share it publicly.
+
 .. _writeplugins:
 
 Implement features
