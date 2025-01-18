@@ -967,6 +967,7 @@ class FixtureDef(Generic[FixtureValue]):
         _ispytest: bool = False,
         # only used in a deprecationwarning msg, can be removed in pytest9
         _autouse: bool = False,
+        has_explicit_name: bool = False,
     ) -> None:
         check_ispytest(_ispytest)
         # The "base" node ID for the fixture.
@@ -1690,12 +1691,13 @@ class FixtureManager:
         self,
         *,
         name: str,
-        func: _FixtureFunc[object],
         nodeid: str | None,
-        scope: Scope | _ScopeName | Callable[[str, Config], _ScopeName] = "function",
-        params: Sequence[object] | None = None,
+        func: Callable[..., object],
+        scope: _ScopeName,
+        params: Sequence[object] | None,
         ids: tuple[object | None, ...] | Callable[[Any], object | None] | None = None,
         autouse: bool = False,
+        has_explicit_name: bool = False,
     ) -> None:
         """Register a fixture
 
@@ -1727,6 +1729,7 @@ class FixtureManager:
             ids=ids,
             _ispytest=True,
             _autouse=autouse,
+            has_explicit_name=has_explicit_name,
         )
 
         faclist = self._arg2fixturedefs.setdefault(name, [])
@@ -1801,8 +1804,10 @@ class FixtureManager:
                 marker = obj_ub._fixture_function_marker
                 if marker.name:
                     fixture_name = marker.name
+                    has_explicit_name = True
                 else:
                     fixture_name = name
+                    has_explicit_name = False
 
                 # OK we know it is a fixture -- now safe to look up on the _instance_.
                 try:
@@ -1821,6 +1826,7 @@ class FixtureManager:
                     params=marker.params,
                     ids=marker.ids,
                     autouse=marker.autouse,
+                    has_explicit_name=has_explicit_name,
                 )
 
     def getfixturedefs(
@@ -1847,9 +1853,13 @@ class FixtureManager:
         self, fixturedefs: Iterable[FixtureDef[Any]], node: nodes.Node
     ) -> Iterator[FixtureDef[Any]]:
         parentnodeids = {n.nodeid for n in node.iter_parents()}
-        for fixturedef in fixturedefs:
-            if fixturedef.baseid in parentnodeids:
-                yield fixturedef
+        matching_fixturedefs = [
+            fixturedef for fixturedef in fixturedefs
+            if fixturedef.baseid in parentnodeids
+        ]
+        # Sort fixtures, prioritizing those with explicitly set names
+        matching_fixturedefs.sort(key=lambda fd: (not fd.has_explicit_name, fd.argname))
+        yield from matching_fixturedefs
 
 
 def show_fixtures_per_test(config: Config) -> int | ExitCode:
