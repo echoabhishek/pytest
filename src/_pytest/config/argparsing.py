@@ -508,3 +508,13 @@ class DropShorterLongHelpFormatter(argparse.HelpFormatter):
         for line in text.splitlines():
             lines.extend(textwrap.wrap(line.strip(), width))
         return lines
+
+def pytest_addoption(parser):
+    group = parser.getgroup("terminal reporting")
+    group.addoption(
+        "--show-progress-in-tab",
+        action="store_true",
+        default=False,
+        help="Show progress in terminal tab",
+    )
+
