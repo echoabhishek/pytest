@@ -148,6 +148,12 @@ def pytest_addoption(parser: Parser) -> None:
         help="Disable header",
     )
     group._addoption(
+        "--enable-terminal-progress",
+        action="store_true",
+        default=False,
+        help="Enable progress reporting in terminal tab.",
+    )
+    group._addoption(
         "--no-summary",
         action="store_true",
         default=False,
@@ -361,21 +367,21 @@ class WarningReport:
 @final
 class TerminalReporter:
     def __init__(self, config: Config, file: TextIO | None = None) -> None:
-        import _pytest.config
-
         self.config = config
+        self._tw = TerminalWriter(file)
+        self._screen_width = self._tw.fullwidth
+        self.stats: dict[str, list[BaseReport]] = {}
+        self.startdir = config.invocation_params.dir
         self._numcollected = 0
         self._session: Session | None = None
         self._showfspath: bool | None = None
 
-        self.stats: dict[str, list[Any]] = {}
         self._main_color: str | None = None
         self._known_types: list[str] | None = None
         self.startpath = config.invocation_params.dir
         if file is None:
             file = sys.stdout
         self._tw = _pytest.config.create_terminal_writer(config, file)
-        self._screen_width = self._tw.fullwidth
         self.currentfspath: None | Path | str | int = None
         self.reportchars = getreportopt(config)
         self.foldskipped = config.option.fold_skipped
@@ -385,6 +391,18 @@ class TerminalReporter:
         self._show_progress_info = self._determine_show_progress_info()
         self._collect_report_last_write: float | None = None
         self._already_displayed_warnings: int | None = None
+        self.enable_terminal_progress = config.getoption("enable_terminal_progress", False)
+        self.total_tests = 0
+        self.completed_tests = 0
+
+    def update_progress(self) -> None:
+        if self.enable_terminal_progress and self.total_tests > 0:
+            progress = int((self.completed_tests / self.total_tests) * 100)
+            sys.stdout.write(f"]9;4;{progress};100")
+            sys.stdout.flush()
+
+    def pytest_collection_modifyitems(self, items: list[Item]) -> None:
+        self.total_tests = len(items)
         self._keyboardinterrupt_memo: ExceptionRepr | None = None
 
     def _determine_show_progress_info(self) -> Literal["progress", "count", False]:
@@ -590,19 +608,19 @@ class TerminalReporter:
     def pytest_runtest_logreport(self, report: TestReport) -> None:
         self._tests_ran = True
         rep = report
-
-        res = TestShortLogReport(
-            *self.config.hook.pytest_report_teststatus(report=rep, config=self.config)
+        res = self.config.hook.pytest_report_teststatus(
+            report=rep, config=self.config
         )
-        category, letter, word = res.category, res.letter, res.word
-        if not isinstance(word, tuple):
-            markup = None
-        else:
+        category, letter, word = res
+        if isinstance(word, tuple):
             word, markup = word
-        self._add_stats(category, [rep])
+        else:
+            markup = None
+        self.stats.setdefault(category, []).append(rep)
         if not letter and not word:
-            # Probably passed setup/teardown.
+            # Probably passed setup/teardown
             return
+        running_xdist = hasattr(rep, "node")
         if markup is None:
             was_xfail = hasattr(report, "wasxfail")
             if rep.passed and not was_xfail:
@@ -615,52 +633,24 @@ class TerminalReporter:
                 markup = {"yellow": True}
             else:
                 markup = {}
-        self._progress_nodeids_reported.add(rep.nodeid)
-        if self.config.get_verbosity(Config.VERBOSITY_TEST_CASES) <= 0:
-            self._tw.write(letter, **markup)
-            # When running in xdist, the logreport and logfinish of multiple
-            # items are interspersed, e.g. `logreport`, `logreport`,
-            # `logfinish`, `logfinish`. To avoid the "past edge" calculation
-            # from getting confused and overflowing (#7166), do the past edge
-            # printing here and not in logfinish, except for the 100% which
-            # should only be printed after all teardowns are finished.
-            if self._show_progress_info and not self._is_last_item:
-                self._write_progress_information_if_past_edge()
+        if self.verbosity <= 0:
+            self._tw.write(letter)
+        elif self.verbosity == 1:
+            self._tw.write(word[0])
         else:
-            line = self._locationline(rep.nodeid, *rep.location)
-            running_xdist = hasattr(rep, "node")
-            if not running_xdist:
-                self.write_ensure_prefix(line, word, **markup)
-                if rep.skipped or hasattr(report, "wasxfail"):
-                    reason = _get_raw_skip_reason(rep)
-                    if self.config.get_verbosity(Config.VERBOSITY_TEST_CASES) < 2:
-                        available_width = (
-                            (self._tw.fullwidth - self._tw.width_of_current_line)
-                            - len(" [100%]")
-                            - 1
-                        )
-                        formatted_reason = _format_trimmed(
-                            " ({})", reason, available_width
-                        )
-                    else:
-                        formatted_reason = f" ({reason})"
+            self._tw.write(" " + word + " ")
+            if running_xdist:
+                self._tw.write("[%s]" % rep.node.gateway.id)
+        self._tw.write(" ")
 
-                    if reason and formatted_reason is not None:
-                        self.wrap_write(formatted_reason)
-                if self._show_progress_info:
-                    self._write_progress_information_filling_space()
-            else:
-                self.ensure_newline()
-                self._tw.write(f"[{rep.node.gateway.id}]")
-                if self._show_progress_info:
-                    self._tw.write(
-                        self._get_progress_information_message() + " ", cyan=True
-                    )
-                else:
-                    self._tw.write(" ")
-                self._tw.write(word, **markup)
-                self._tw.write(" " + line)
-                self.currentfspath = -2
+        # Add progress reporting
+        if self.enable_terminal_progress and report.when == "call":
+            self.completed_tests += 1
+            if self.total_tests > 0:
+                progress = int((self.completed_tests / self.total_tests) * 100)
+                sys.stdout.write(f"]9;4;{progress};100")
+                sys.stdout.flush()
+
         self.flush()
 
     @property
