@@ -19,6 +19,13 @@ from typing import final
 from typing import overload
 from typing import TYPE_CHECKING
 from typing import TypeVar
+from typing import get_origin, get_args
+from types import GenericAlias
+
+try:
+    from exceptiongroup import ExceptionGroup
+except ImportError:
+    ExceptionGroup = BaseException  # type: ignore
 
 import _pytest._code
 from _pytest.outcomes import fail
@@ -805,14 +812,39 @@ def raises(
 
 
 def raises(
-    expected_exception: type[E] | tuple[type[E], ...], *args: Any, **kwargs: Any
+    expected_exception: type[E] | tuple[type[E], ...] | type[ExceptionGroup[Any]] | tuple[type[ExceptionGroup[Any]], ...],
+    *args: Any,
+    **kwargs: Any
 ) -> RaisesContext[E] | _pytest._code.ExceptionInfo[E]:
+    __tracebackhide__ = True
+
+    def handle_exception_group(exc):
+        if isinstance(exc, (type, GenericAlias)):
+            origin = get_origin(exc)
+            if origin is ExceptionGroup or origin is None and issubclass(exc, ExceptionGroup):
+                return ExceptionGroup
+        elif isinstance(exc, tuple):
+            return tuple(handle_exception_group(e) for e in exc)
+        return exc
+
+    expected_exception = handle_exception_group(expected_exception)
     r"""Assert that a code block/function call raises an exception type, or one of its subclasses.
 
     :param expected_exception:
         The expected exception type, or a tuple if one of multiple possible
         exception types are expected. Note that subclasses of the passed exceptions
-        will also match.
+        will also match. This parameter now supports typed ExceptionGroups.
+
+    __tracebackhide__ = True
+
+    # Handle typed ExceptionGroups
+    if isinstance(expected_exception, (type, GenericAlias)) and get_origin(expected_exception) is ExceptionGroup:
+        expected_exception = ExceptionGroup
+    elif isinstance(expected_exception, tuple):
+        expected_exception = tuple(
+            ExceptionGroup if isinstance(exc, (type, GenericAlias)) and get_origin(exc) is ExceptionGroup else exc
+            for exc in expected_exception
+        )
 
     :kwparam str | re.Pattern[str] | None match:
         If specified, a string containing a regular expression,
@@ -849,6 +881,15 @@ def raises(
 
     The ``match`` argument searches the formatted exception string, which includes any
     `PEP-678 <https://peps.python.org/pep-0678/>`__ ``__notes__``:
+
+    # Handle typed ExceptionGroups
+    if get_origin(expected_exception) is ExceptionGroup:
+        expected_exception = ExceptionGroup
+    elif isinstance(expected_exception, tuple):
+        expected_exception = tuple(
+            ExceptionGroup if get_origin(exc) is ExceptionGroup else exc
+            for exc in expected_exception
+        )
 
         >>> with pytest.raises(ValueError, match=r"had a note added"):  # doctest: +SKIP
         ...     e = ValueError("value must be 42")
