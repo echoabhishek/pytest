@@ -1847,9 +1847,12 @@ class FixtureManager:
         self, fixturedefs: Iterable[FixtureDef[Any]], node: nodes.Node
     ) -> Iterator[FixtureDef[Any]]:
         parentnodeids = {n.nodeid for n in node.iter_parents()}
-        for fixturedef in fixturedefs:
-            if fixturedef.baseid in parentnodeids:
-                yield fixturedef
+        matching_fixturedefs = [
+            fixturedef for fixturedef in fixturedefs
+            if fixturedef.baseid in parentnodeids
+        ]
+        if matching_fixturedefs:
+            yield matching_fixturedefs[-1]  # Return only the last (most recently defined) fixture
 
 
 def show_fixtures_per_test(config: Config) -> int | ExitCode:
