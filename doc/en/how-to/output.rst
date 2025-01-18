@@ -833,3 +833,23 @@ If creating the URL fails for any reason, a warning is generated instead of fail
 entire test suite.
 
 .. _jenkins: https://jenkins-ci.org
+
+Show Progress in Terminal Tab
+-----------------------------
+
+pytest can now show the progress of test execution in the terminal tab. This feature
+is particularly useful when running a large number of tests, as it allows you to see
+the overall progress at a glance without switching to the pytest window.
+
+To enable this feature, use the --show-progress-in-tab command-line option:
+
+.. code-block:: bash
+
+    pytest --show-progress-in-tab
+
+This will update the terminal tab title with the current progress percentage as tests
+are executed.
+
+Note that this feature may not be supported by all terminal emulators. It has been
+tested with recent versions of GNOME Terminal and iTerm2.
+
